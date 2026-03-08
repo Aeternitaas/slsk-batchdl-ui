@@ -21,7 +21,7 @@ on:
 
 # ── Shared version helper ────────────────────────────────────────────────────
 env:
-  FLUTTER_VERSION: '3.24.5'   # Pin to a stable version; bump as needed
+  FLUTTER_VERSION: '3.41.1'   # Pin to a stable version; bump as needed
 
 jobs:
   # ── Windows: build Flutter app + create Inno Setup installer ───────────────
@@ -63,7 +63,7 @@ jobs:
       # ── Build Flutter Windows app ──────────────────────────────────────────
       - name: Build Flutter Windows (release)
         working-directory: sldl_ui
-        run: flutter build windows --release
+        run: flutter build windows --release --verbose
 
       # ── Fetch latest sldl Windows binary ──────────────────────────────────
       - name: Download latest sldl for Windows
