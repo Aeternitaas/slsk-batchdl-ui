@@ -31,7 +31,7 @@ include(flutter/generated_plugins.cmake OPTIONAL)
 
 # === Installation ===
 # Install for the runner target.
-set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
+set(BUILD_BUNDLE_DIR "${CMAKE_CURRENT_BINARY_DIR}/runner/$<CONFIG>")
 
 # Make the "install" step default to a "bin" directory under the project root.
 set(AUTO_INSTALL_BUNDLES TRUE CACHE BOOL "Automatically install build artifacts in bundle dir")
