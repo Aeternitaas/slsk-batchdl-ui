@@ -220,7 +220,7 @@ LRESULT Win32Window::MessageHandler(HWND hwnd, UINT const message,
       return 0;
   }
 
-  return DefWindowProc(window, message, wparam, lparam);
+  return DefWindowProc(hwnd, message, wparam, lparam);
 }
 
 bool Win32Window::OnCreate() {

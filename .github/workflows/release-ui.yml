@@ -1,11 +1,13 @@
 name: Build & Release sldl UI
 
-# Trigger on version tags: v1.0.0, v1.2.3, etc.
+# Trigger on version tags or pushes to master (build check only, no release).
 # Also runnable manually via the Actions tab for testing.
 on:
   push:
     tags:
       - 'ui-v*'
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       version:
