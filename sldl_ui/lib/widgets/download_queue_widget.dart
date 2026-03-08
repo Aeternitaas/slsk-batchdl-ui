@@ -334,8 +334,16 @@ class _DownloadItemCardState extends State<_DownloadItemCard> {
       icon = Icon(Icons.close, size: 12, color: theme.colorScheme.error);
     }
 
-    // Indeterminate while active, full when done, hidden on failure.
-    final double? barValue = file.status == TrackFileStatus.succeeded ? 1.0 : null;
+    final double? barValue = switch (file.status) {
+      TrackFileStatus.succeeded => 1.0,
+      TrackFileStatus.failed => 1.0,
+      _ => null, // indeterminate while active
+    };
+    final Color? barColor = switch (file.status) {
+      TrackFileStatus.succeeded => Colors.green[600],
+      TrackFileStatus.failed => theme.colorScheme.error,
+      _ => null,
+    };
 
     return Padding(
       padding: const EdgeInsets.only(left: 24, bottom: 4),
@@ -362,20 +370,16 @@ class _DownloadItemCardState extends State<_DownloadItemCard> {
               ),
             ],
           ),
-          if (!isFailed) ...[
-            const SizedBox(height: 2),
-            Padding(
-              padding: const EdgeInsets.only(left: 20),
-              child: LinearProgressIndicator(
-                value: barValue,
-                minHeight: 2,
-                borderRadius: BorderRadius.circular(1),
-                color: file.status == TrackFileStatus.succeeded
-                    ? Colors.green[600]
-                    : null,
-              ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.only(left: 20),
+            child: LinearProgressIndicator(
+              value: barValue,
+              minHeight: 2,
+              borderRadius: BorderRadius.circular(1),
+              color: barColor,
             ),
-          ],
+          ),
         ],
       ),
     );

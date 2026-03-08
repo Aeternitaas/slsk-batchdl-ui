@@ -288,12 +288,18 @@ class ProcessService {
       return ProcessEvent(type: ProcessEventType.trackSkipped, message: line);
     }
 
-    // sldl "not found" messages — count as failures so status is set correctly
-    if (RegExp(r'^not found:', caseSensitive: false).hasMatch(line.trim())) {
-      return ProcessEvent(type: ProcessEventType.trackFailed, message: line);
-    }
-    if (RegExp(r'^no results:', caseSensitive: false).hasMatch(line.trim())) {
-      return ProcessEvent(type: ProcessEventType.trackFailed, message: line);
+    // sldl "not found" messages — count as failures so status is set correctly.
+    // Extract the track name so the UI can show a red bar for each one.
+    final notFoundMatch = RegExp(
+      r'^(not found|no results):\s*(.*)',
+      caseSensitive: false,
+    ).firstMatch(line.trim());
+    if (notFoundMatch != null) {
+      return ProcessEvent(
+        type: ProcessEventType.trackFailed,
+        message: line,
+        fileName: notFoundMatch.group(2)?.trim(),
+      );
     }
 
     // Completion summary

@@ -246,6 +246,9 @@ class AppProvider extends ChangeNotifier {
       case ProcessEventType.trackFailed:
         _inferConnected();
         item.failedCount++;
+        if (event.fileName != null) {
+          item.updateFileState(event.fileName!, TrackFileStatus.failed);
+        }
         if (item.totalCount > 0) {
           item.progress = (item.succeededCount + item.failedCount) / item.totalCount;
         }
