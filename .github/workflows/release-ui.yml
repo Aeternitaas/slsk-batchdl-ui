@@ -1,0 +1,257 @@
+name: Build & Release sldl UI
+
+# Trigger on version tags: v1.0.0, v1.2.3, etc.
+# Also runnable manually via the Actions tab for testing.
+on:
+  push:
+    tags:
+      - 'ui-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g. 1.2.0)'
+        required: true
+        default: '1.0.0'
+      upload_release:
+        description: 'Create a GitHub Release?'
+        type: boolean
+        default: false
+
+# ── Shared version helper ────────────────────────────────────────────────────
+env:
+  FLUTTER_VERSION: '3.24.5'   # Pin to a stable version; bump as needed
+
+jobs:
+  # ── Windows: build Flutter app + create Inno Setup installer ───────────────
+  build-windows:
+    name: Windows installer
+    runs-on: windows-latest
+    permissions:
+      contents: write        # needed to create releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Derive version ─────────────────────────────────────────────────────
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}" -replace '^ui-v', ''
+          } else {
+            $v = "${{ inputs.version }}"
+          }
+          echo "VERSION=$v" >> $env:GITHUB_OUTPUT
+          echo "Resolved version: $v"
+
+      # ── Flutter ────────────────────────────────────────────────────────────
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: sldl_ui
+        run: flutter pub get
+
+      # ── Build Flutter Windows app ──────────────────────────────────────────
+      - name: Build Flutter Windows (release)
+        working-directory: sldl_ui
+        run: flutter build windows --release
+
+      # ── Fetch latest sldl Windows binary ──────────────────────────────────
+      - name: Download latest sldl for Windows
+        id: get_sldl
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/fiso64/slsk-batchdl/releases/latest" `
+            -Headers @{ "User-Agent" = "sldl-ui-ci" }
+          $asset = $release.assets | Where-Object { $_.name -like "*windows*x64*" } | Select-Object -First 1
+          if (-not $asset) {
+            Write-Warning "Could not find a windows-x64 sldl asset in latest release. Installer will prompt user to download."
+            echo "FOUND=false" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Downloading $($asset.name) from $($asset.browser_download_url)"
+            Invoke-WebRequest -Uri $asset.browser_download_url `
+              -OutFile "sldl_ui\setup\windows\sldl.exe" -UseBasicParsing
+            echo "FOUND=true" >> $env:GITHUB_OUTPUT
+          }
+
+      # ── Stage files for Inno Setup ─────────────────────────────────────────
+      # Inno Setup expects:
+      #   sldl_ui\setup\windows\dist\   ← flutter build output
+      #   sldl_ui\setup\windows\sldl.exe (optional, downloaded above)
+      - name: Stage build output
+        shell: pwsh
+        run: |
+          $src = "sldl_ui\build\windows\x64\runner\Release"
+          $dst = "sldl_ui\setup\windows\dist"
+          if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+          Copy-Item $src $dst -Recurse
+
+      # ── Patch version in installer.iss ────────────────────────────────────
+      - name: Patch version in installer.iss
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.VERSION }}"
+          $iss = "sldl_ui\setup\windows\installer.iss"
+          (Get-Content $iss) -replace '#define MyAppVersion\s+"[^"]+"', "#define MyAppVersion `"$v`"" |
+            Set-Content $iss
+          Write-Host "Patched installer version to $v"
+
+      # ── Install Inno Setup ────────────────────────────────────────────────
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+      # ── Compile installer ─────────────────────────────────────────────────
+      - name: Compile installer
+        working-directory: sldl_ui\setup\windows
+        shell: pwsh
+        run: |
+          # Inno Setup must find the icon; create a placeholder if flutter hasn't generated it
+          $iconSrc = "dist\data\flutter_assets\assets\icon.ico"
+          if (-not (Test-Path $iconSrc)) {
+            # Copy the default Flutter Windows icon as fallback
+            $fallback = "..\..\windows\runner\resources\app_icon.ico"
+            if (Test-Path $fallback) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $iconSrc) | Out-Null
+              Copy-Item $fallback $iconSrc
+            } else {
+              # Remove the icon line so ISCC won't fail
+              (Get-Content installer.iss) -replace '^SetupIconFile=.*', '' | Set-Content installer.iss
+            }
+          }
+          ISCC.exe installer.iss
+          Write-Host "Installer created:"
+          Get-ChildItem output\*.exe
+
+      # ── Rename output with version ────────────────────────────────────────
+      - name: Rename installer
+        id: installer
+        shell: pwsh
+        run: |
+          $v   = "${{ steps.version.outputs.VERSION }}"
+          $src = Get-ChildItem "sldl_ui\setup\windows\output\*.exe" | Select-Object -First 1
+          $dst = "sldl_ui\setup\windows\output\sldl-ui-setup-$v-windows-x64.exe"
+          Rename-Item $src.FullName $dst -Force -ErrorAction SilentlyContinue
+          $final = Get-ChildItem "sldl_ui\setup\windows\output\*.exe" | Select-Object -First 1
+          echo "PATH=$($final.FullName)" >> $env:GITHUB_OUTPUT
+          echo "NAME=$($final.Name)" >> $env:GITHUB_OUTPUT
+
+      # ── Upload installer artifact (always, for inspection) ────────────────
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.installer.outputs.NAME }}
+          path: ${{ steps.installer.outputs.PATH }}
+          retention-days: 14
+
+      # ── Create GitHub Release (on tag push or manual opt-in) ─────────────
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag' || inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('ui-v{0}', steps.version.outputs.VERSION) }}
+          name: sldl UI ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+          generate_release_notes: true
+          body: |
+            ## sldl UI ${{ steps.version.outputs.VERSION }}
+
+            **Windows installer** — download `sldl-ui-setup-*.exe` below and run it.
+
+            The installer includes:
+            - sldl UI application
+            - Latest **sldl** backend (auto-downloaded during install if not bundled)
+            - Start Menu shortcut
+            - Optional desktop shortcut & PATH registration
+
+            **Other platforms** — build from source: see [README](../../sldl_ui/README.md).
+
+            ---
+            *Requires Windows 10 or later (x64).*
+          files: ${{ steps.installer.outputs.PATH }}
+
+  # ── Linux: build AppImage / tarball (bonus) ────────────────────────────────
+  build-linux:
+    name: Linux tarball
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libgtk-3-dev pkg-config
+
+      - name: Flutter pub get
+        working-directory: sldl_ui
+        run: flutter pub get
+
+      - name: Build Flutter Linux (release)
+        working-directory: sldl_ui
+        run: flutter build linux --release
+
+      - name: Download latest sldl for Linux
+        shell: bash
+        run: |
+          RELEASE=$(curl -s "https://api.github.com/repos/fiso64/slsk-batchdl/releases/latest")
+          URL=$(echo "$RELEASE" | python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)['assets']
+          for a in assets:
+              if 'linux' in a['name'].lower() and 'x64' in a['name'].lower():
+                  print(a['browser_download_url'])
+                  break
+          " 2>/dev/null || echo "")
+          if [ -n "$URL" ]; then
+            echo "Downloading sldl from $URL"
+            curl -L "$URL" -o sldl_ui/build/linux/x64/release/bundle/sldl
+            chmod +x sldl_ui/build/linux/x64/release/bundle/sldl
+          else
+            echo "sldl linux asset not found; skipping"
+          fi
+
+      - name: Package as tarball
+        id: tarball
+        run: |
+          V=$(echo "${{ github.ref_name }}" | sed 's/^ui-v//')
+          [ -z "$V" ] && V="${{ inputs.version }}"
+          BUNDLE="sldl_ui/build/linux/x64/release/bundle"
+          TARNAME="sldl-ui-$V-linux-x64.tar.gz"
+          tar -czf "$TARNAME" -C "$(dirname $BUNDLE)" "$(basename $BUNDLE)"
+          echo "PATH=$TARNAME" >> "$GITHUB_OUTPUT"
+          echo "NAME=$TARNAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.tarball.outputs.NAME }}
+          path: ${{ steps.tarball.outputs.PATH }}
+          retention-days: 14
+
+      - name: Attach to release
+        if: github.ref_type == 'tag' || inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ steps.tarball.outputs.PATH }}
