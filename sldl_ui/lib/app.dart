@@ -35,7 +35,7 @@ class SldlApp extends StatelessWidget {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
       ),
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
