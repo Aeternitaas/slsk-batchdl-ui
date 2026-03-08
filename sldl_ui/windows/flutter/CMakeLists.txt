@@ -52,6 +52,15 @@ list(APPEND CPP_WRAPPER_SOURCES_APP
 )
 list(TRANSFORM CPP_WRAPPER_SOURCES_APP PREPEND "${EPHEMERAL_DIR}/cpp_client_wrapper/")
 
+# Mark wrapper sources as generated so CMake doesn't check for them at
+# configure time (they are produced by flutter_assemble at build time).
+set_source_files_properties(
+  ${CPP_WRAPPER_SOURCES_CORE}
+  ${CPP_WRAPPER_SOURCES_PLUGIN}
+  ${CPP_WRAPPER_SOURCES_APP}
+  PROPERTIES GENERATED TRUE
+)
+
 # Wrapper sources needed for a plugin.
 add_library(flutter_wrapper_plugin STATIC
   ${CPP_WRAPPER_SOURCES_CORE}
