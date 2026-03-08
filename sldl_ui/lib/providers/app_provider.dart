@@ -208,6 +208,12 @@ class AppProvider extends ChangeNotifier {
         item.failedCount++;
         break;
 
+      case ProcessEventType.trackProgress:
+        if (event.trackIndex != null && event.trackTotal != null && event.trackTotal! > 0) {
+          item.progress = event.trackIndex! / event.trackTotal!;
+        }
+        break;
+
       case ProcessEventType.trackSkipped:
         // Skipped tracks count toward progress
         if (event.trackIndex != null && event.trackTotal != null && event.trackTotal! > 0) {
