@@ -5,7 +5,7 @@
 ; Expected layout next to this .iss file when building:
 ;   dist\                        <- flutter build windows output (copy here)
 ;   sldl.exe                     <- sldl binary (optional; installer downloads it if absent)
-;   ..\..\LICENSE
+;   ..\..\..\LICENSE
 ; ============================================================
 
 #define MyAppName      "sldl UI"
@@ -37,7 +37,7 @@ AllowNoIcons=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
-LicenseFile=..\..\LICENSE
+LicenseFile=..\..\..\LICENSE
 OutputDir=output
 OutputBaseFilename=sldl-ui-setup-{#MyAppVersion}-windows-x64
 
@@ -94,7 +94,7 @@ Source: "{#SldlExe}"; DestDir: "{app}"; \
   Flags: ignoreversion skipifsourcedoesntexist; Components: sldl
 
 ; ── Licence ───────────────────────────────────────────────────────────────────
-Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Start menu
