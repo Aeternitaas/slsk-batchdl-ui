@@ -62,6 +62,14 @@ extension InputTypeExt on InputType {
   }
 }
 
+enum TrackFileStatus { initializing, downloading, succeeded, failed }
+
+class TrackFile {
+  final String name;
+  TrackFileStatus status;
+  TrackFile(this.name, this.status);
+}
+
 class TrackStat {
   final String name;
   final DownloadStatus status;
@@ -85,6 +93,7 @@ class DownloadItem {
   int totalCount;
   List<String> logLines;
   List<TrackStat> tracks;
+  List<TrackFile> recentFiles;
   DateTime createdAt;
   DateTime? startedAt;
   DateTime? completedAt;
@@ -104,18 +113,34 @@ class DownloadItem {
     this.totalCount = 0,
     List<String>? logLines,
     List<TrackStat>? tracks,
+    List<TrackFile>? recentFiles,
     DateTime? createdAt,
     this.startedAt,
     this.completedAt,
   })  : id = id ?? const Uuid().v4(),
         logLines = logLines ?? [],
         tracks = tracks ?? [],
+        recentFiles = recentFiles ?? [],
         createdAt = createdAt ?? DateTime.now();
+
+  static const int _kMaxRecentFiles = 50;
 
   void addLog(String line) {
     logLines.add(line);
     if (logLines.length > 500) {
       logLines.removeAt(0);
+    }
+  }
+
+  void updateFileState(String name, TrackFileStatus status) {
+    final idx = recentFiles.indexWhere((f) => f.name == name);
+    if (idx >= 0) {
+      recentFiles[idx].status = status;
+    } else {
+      recentFiles.add(TrackFile(name, status));
+      if (recentFiles.length > _kMaxRecentFiles) {
+        recentFiles.removeAt(0);
+      }
     }
   }
 

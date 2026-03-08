@@ -22,7 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     ('General', Icons.settings),
     ('Connection', Icons.lan),
     ('Search', Icons.search),
-    ('File Conditions', Icons.filter_list),
     ('Album & Aggregate', Icons.album),
     ('Spotify', Icons.music_note),
     ('YouTube', Icons.smart_display),
@@ -34,9 +33,23 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: _tabs.length, vsync: this);
+    // Seed from in-memory state immediately so the screen is not blank
     final provider = context.read<AppProvider>();
     _draft = provider.config.copy();
     _sldlPathDraft = provider.sldlExecutablePath ?? '';
+    // Then reload from disk so the UI always reflects the file on disk
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadFromDisk());
+  }
+
+  Future<void> _reloadFromDisk() async {
+    if (!mounted) return;
+    final provider = context.read<AppProvider>();
+    await provider.reloadConfig();
+    if (!mounted || _dirty) return;
+    setState(() {
+      _draft = provider.config.copy();
+      _sldlPathDraft = provider.sldlExecutablePath ?? '';
+    });
   }
 
   @override
@@ -72,8 +85,6 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -114,7 +125,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           }),
           _ConnectionTab(draft: _draft, onChanged: (_) { _markDirty(); }),
           _SearchTab(draft: _draft, onChanged: (_) { _markDirty(); }),
-          _FileConditionsTab(draft: _draft, onChanged: (_) { _markDirty(); }),
           _AlbumAggregateTab(draft: _draft, onChanged: (_) { _markDirty(); }),
           _SpotifyTab(draft: _draft, onChanged: (_) { _markDirty(); }),
           _YouTubeTab(draft: _draft, onChanged: (_) { _markDirty(); }),
@@ -592,145 +602,6 @@ class _SearchTabState extends State<_SearchTab> {
           setState(() => _d.ytDlpArgument = v.isEmpty ? null : v);
           _notify();
         }, hint: '"{id}" -f bestaudio/best -cix -o "{savepath}.%(ext)s"'),
-      ]),
-    ]);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tab: File Conditions
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FileConditionsTab extends StatefulWidget {
-  final SldlConfig draft;
-  final ValueChanged<SldlConfig> onChanged;
-  const _FileConditionsTab({required this.draft, required this.onChanged});
-
-  @override
-  State<_FileConditionsTab> createState() => _FileConditionsTabState();
-}
-
-class _FileConditionsTabState extends State<_FileConditionsTab> {
-  late SldlConfig _d;
-
-  @override
-  void initState() {
-    super.initState();
-    _d = widget.draft;
-  }
-
-  void _notify() => widget.onChanged(_d);
-
-  @override
-  Widget build(BuildContext context) {
-    return _SettingsTabScroll(children: [
-      Container(
-        padding: const EdgeInsets.all(10),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.4),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          'Required conditions: files not matching will be skipped.\n'
-          'Preferred conditions: files matching are ranked higher.\n'
-          'Leave blank to use sldl defaults.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ),
-
-      _Section(title: 'Required Conditions', children: [
-        _field('Format (comma-separated)', _d.format, (v) {
-          setState(() => _d.format = v.isEmpty ? null : v);
-          _notify();
-        }, hint: 'mp3,flac,ogg,m4a,opus,wav,aac,alac'),
-        _intField('Length Tolerance (sec)', _d.lengthTol, (v) {
-          setState(() => _d.lengthTol = v);
-          _notify();
-        }),
-        _intField('Min Bitrate', _d.minBitrate, (v) {
-          setState(() => _d.minBitrate = v);
-          _notify();
-        }),
-        _intField('Max Bitrate', _d.maxBitrate, (v) {
-          setState(() => _d.maxBitrate = v);
-          _notify();
-        }),
-        _intField('Min Sample Rate', _d.minSamplerate, (v) {
-          setState(() => _d.minSamplerate = v);
-          _notify();
-        }),
-        _intField('Max Sample Rate', _d.maxSamplerate, (v) {
-          setState(() => _d.maxSamplerate = v);
-          _notify();
-        }),
-        _intField('Min Bit Depth', _d.minBitdepth, (v) {
-          setState(() => _d.minBitdepth = v);
-          _notify();
-        }),
-        _intField('Max Bit Depth', _d.maxBitdepth, (v) {
-          setState(() => _d.maxBitdepth = v);
-          _notify();
-        }),
-        _toggle('Strict Title', _d.strictTitle, (v) {
-          setState(() => _d.strictTitle = v ? true : null);
-          _notify();
-        }, subtitle: 'File name must contain track title'),
-        _toggle('Strict Artist', _d.strictArtist, (v) {
-          setState(() => _d.strictArtist = v ? true : null);
-          _notify();
-        }, subtitle: 'File path must contain artist name'),
-        _toggle('Strict Album', _d.strictAlbum, (v) {
-          setState(() => _d.strictAlbum = v ? true : null);
-          _notify();
-        }, subtitle: 'File path must contain album name'),
-        _toggle('Strict Conditions', _d.strictConditions, (v) {
-          setState(() => _d.strictConditions = v ? true : null);
-          _notify();
-        }, subtitle: 'Reject files with missing/unknown properties'),
-        _field('Banned Users', _d.bannedUsers, (v) {
-          setState(() => _d.bannedUsers = v.isEmpty ? null : v);
-          _notify();
-        }, hint: 'user1,user2', helperText: 'Comma-separated list of users to ignore'),
-      ]),
-
-      _Section(title: 'Preferred Conditions', children: [
-        _field('Preferred Format', _d.prefFormat, (v) {
-          setState(() => _d.prefFormat = v.isEmpty ? null : v);
-          _notify();
-        }, hint: 'mp3', helperText: 'Default: mp3'),
-        _intField('Preferred Length Tolerance (sec)', _d.prefLengthTol, (v) {
-          setState(() => _d.prefLengthTol = v);
-          _notify();
-        }, hint: '3'),
-        _intField('Preferred Min Bitrate', _d.prefMinBitrate, (v) {
-          setState(() => _d.prefMinBitrate = v);
-          _notify();
-        }, hint: '200'),
-        _intField('Preferred Max Bitrate', _d.prefMaxBitrate, (v) {
-          setState(() => _d.prefMaxBitrate = v);
-          _notify();
-        }, hint: '2500'),
-        _intField('Preferred Min Sample Rate', _d.prefMinSamplerate, (v) {
-          setState(() => _d.prefMinSamplerate = v);
-          _notify();
-        }),
-        _intField('Preferred Max Sample Rate', _d.prefMaxSamplerate, (v) {
-          setState(() => _d.prefMaxSamplerate = v);
-          _notify();
-        }, hint: '48000'),
-        _intField('Preferred Min Bit Depth', _d.prefMinBitdepth, (v) {
-          setState(() => _d.prefMinBitdepth = v);
-          _notify();
-        }),
-        _intField('Preferred Max Bit Depth', _d.prefMaxBitdepth, (v) {
-          setState(() => _d.prefMaxBitdepth = v);
-          _notify();
-        }),
-        _field('Preferred Banned Users', _d.prefBannedUsers, (v) {
-          setState(() => _d.prefBannedUsers = v.isEmpty ? null : v);
-          _notify();
-        }, helperText: 'Comma-separated list of users to downrank'),
       ]),
     ]);
   }

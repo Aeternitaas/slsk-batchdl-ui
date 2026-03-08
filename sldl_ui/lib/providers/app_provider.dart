@@ -21,6 +21,7 @@ class AppProvider extends ChangeNotifier {
   DownloadItem? _currentItem;
   bool _isProcessingQueue = false;
   StreamSubscription<ProcessEvent>? _currentSub;
+  Timer? _progressTimer;
 
   // Callbacks for dialogs
   void Function()? onLoginRequired;
@@ -36,6 +37,22 @@ class AppProvider extends ChangeNotifier {
   DownloadItem? get currentItem => _currentItem;
   bool get isRunning => _processService.isRunning;
   bool get hasCredentials => config.hasCredentials;
+
+  // ── Progress timer ────────────────────────────────────────────────────────
+
+  /// Fires notifyListeners at ~5 Hz while a download is running, so the UI
+  /// reflects progress without rebuilding on every single stdout line.
+  void _startProgressTimer() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      notifyListeners();
+    });
+  }
+
+  void _stopProgressTimer() {
+    _progressTimer?.cancel();
+    _progressTimer = null;
+  }
 
   // ── Initialization ────────────────────────────────────────────────────────
 
@@ -91,6 +108,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   void cancelCurrent() {
+    _stopProgressTimer();
     _processService.cancel();
     _currentItem?.status = DownloadStatus.cancelled;
     _currentItem?.completedAt = DateTime.now();
@@ -131,11 +149,13 @@ class AppProvider extends ChangeNotifier {
     item.status = DownloadStatus.running;
     item.startedAt = DateTime.now();
     notifyListeners();
+    _startProgressTimer();
 
     final stream = _processService.run(exePath, item, config);
     _currentSub = stream.listen(
       (event) => _handleProcessEvent(item, event),
       onDone: () {
+        _stopProgressTimer();
         _isProcessingQueue = false;
         _currentItem = null;
         _currentSub = null;
@@ -150,6 +170,7 @@ class AppProvider extends ChangeNotifier {
         _processNextIfIdle();
       },
       onError: (e) {
+        _stopProgressTimer();
         item.addLog('Error: $e');
         item.status = DownloadStatus.failed;
         item.completedAt = DateTime.now();
@@ -162,7 +183,17 @@ class AppProvider extends ChangeNotifier {
     );
   }
 
+  void _inferConnected() {
+    if (connectionStatus == ConnectionStatus.connecting) {
+      connectionStatus = ConnectionStatus.connected;
+      appConfigService.setConnected(true);
+    }
+  }
+
   void _handleProcessEvent(DownloadItem item, ProcessEvent event) {
+    // Whether this event warrants an immediate UI rebuild outside the timer.
+    bool immediateNotify = false;
+
     switch (event.type) {
       case ProcessEventType.log:
         if (event.message != null) item.addLog(event.message!);
@@ -170,42 +201,54 @@ class AppProvider extends ChangeNotifier {
 
       case ProcessEventType.loginConnecting:
         connectionStatus = ConnectionStatus.connecting;
+        immediateNotify = true;
         break;
 
       case ProcessEventType.loginSuccess:
         connectionStatus = ConnectionStatus.connected;
         appConfigService.setConnected(true);
+        immediateNotify = true;
         break;
 
       case ProcessEventType.loginFailed:
         connectionStatus = ConnectionStatus.failed;
         appConfigService.setConnected(false);
         item.addLog(event.message ?? 'Login failed');
-        // Trigger login re-prompt
         onConnectionLost?.call();
+        immediateNotify = true;
         break;
 
       case ProcessEventType.jobStart:
+        _inferConnected();
         if (event.trackTotal != null) {
           item.totalCount = event.trackTotal!;
         }
         break;
 
       case ProcessEventType.trackStart:
+        _inferConnected();
         if (event.trackIndex != null && event.trackTotal != null && event.trackTotal! > 0) {
           item.progress = (event.trackIndex! - 1) / event.trackTotal!;
         }
         break;
 
       case ProcessEventType.trackSuccess:
+        _inferConnected();
         item.succeededCount++;
-        if (event.trackIndex != null && event.trackTotal != null && event.trackTotal! > 0) {
-          item.progress = event.trackIndex! / event.trackTotal!;
+        if (event.fileName != null) {
+          item.updateFileState(event.fileName!, TrackFileStatus.succeeded);
+        }
+        if (item.totalCount > 0) {
+          item.progress = (item.succeededCount + item.failedCount) / item.totalCount;
         }
         break;
 
       case ProcessEventType.trackFailed:
+        _inferConnected();
         item.failedCount++;
+        if (item.totalCount > 0) {
+          item.progress = (item.succeededCount + item.failedCount) / item.totalCount;
+        }
         break;
 
       case ProcessEventType.trackProgress:
@@ -215,9 +258,28 @@ class AppProvider extends ChangeNotifier {
         break;
 
       case ProcessEventType.trackSkipped:
-        // Skipped tracks count toward progress
         if (event.trackIndex != null && event.trackTotal != null && event.trackTotal! > 0) {
           item.progress = event.trackIndex! / event.trackTotal!;
+        }
+        break;
+
+      case ProcessEventType.fileInit:
+        _inferConnected();
+        if (event.fileName != null) {
+          item.updateFileState(event.fileName!, TrackFileStatus.initializing);
+        }
+        break;
+
+      case ProcessEventType.fileActive:
+        if (event.fileName != null) {
+          item.updateFileState(event.fileName!, TrackFileStatus.downloading);
+        }
+        break;
+
+      case ProcessEventType.intervalProgress:
+        // Exact % from sldl's IntervalProgressReporter — use when available.
+        if (event.progress != null) {
+          item.progress = event.progress!;
         }
         break;
 
@@ -229,16 +291,20 @@ class AppProvider extends ChangeNotifier {
             ? DownloadStatus.failed
             : DownloadStatus.succeeded;
         item.completedAt = DateTime.now();
+        _stopProgressTimer();
+        immediateNotify = true;
         break;
 
       case ProcessEventType.jobFailed:
         item.status = DownloadStatus.failed;
         item.completedAt = DateTime.now();
         if (event.message != null) item.addLog(event.message!);
+        _stopProgressTimer();
+        immediateNotify = true;
         break;
     }
 
-    notifyListeners();
+    if (immediateNotify) notifyListeners();
   }
 }
 

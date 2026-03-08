@@ -17,11 +17,15 @@ enum ProcessEventType {
   trackSkipped,
   jobComplete,
   jobFailed,
+  fileInit,
+  fileActive,
+  intervalProgress,
 }
 
 class ProcessEvent {
   final ProcessEventType type;
   final String? message;
+  final String? fileName;
   final int? trackIndex;
   final int? trackTotal;
   final int? succeededCount;
@@ -31,6 +35,7 @@ class ProcessEvent {
   const ProcessEvent({
     required this.type,
     this.message,
+    this.fileName,
     this.trackIndex,
     this.trackTotal,
     this.succeededCount,
@@ -163,13 +168,7 @@ class ProcessService {
   ProcessEvent? _parseLine(String line) {
     final lower = line.toLowerCase();
 
-    // Login / connection events
-    if (_matchesAny(lower, ['logging in', 'connecting to soulseek'])) {
-      return ProcessEvent(type: ProcessEventType.loginConnecting, message: line);
-    }
-    if (_matchesAny(lower, ['connected to soulseek', 'logged in', 'connected.'])) {
-      return ProcessEvent(type: ProcessEventType.loginSuccess, message: line);
-    }
+    // Login / connection events — check failures first to avoid 'login ' matching 'login failed'
     if (_matchesAny(lower, [
       'login failed',
       'failed to ensure soulseek connection',
@@ -178,6 +177,12 @@ class ProcessService {
       'invalid credentials',
     ])) {
       return ProcessEvent(type: ProcessEventType.loginFailed, message: line);
+    }
+    if (_matchesAny(lower, ['login ', 'logging in', 'connecting to soulseek'])) {
+      return ProcessEvent(type: ProcessEventType.loginConnecting, message: line);
+    }
+    if (_matchesAny(lower, ['connected to soulseek', 'logged in', 'reconnected successfully', 'connected.'])) {
+      return ProcessEvent(type: ProcessEventType.loginSuccess, message: line);
     }
 
     // Download summary
@@ -236,15 +241,59 @@ class ProcessService {
       }
     }
 
-    // Standalone Succeeded/Failed/Skipping lines without [n/N] prefix
+    // Per-file state from DownloadWrapper (printed to stdout when output is piped).
+    // "Initialize: <displayText>" comes from the DownloadWrapper constructor.
+    // "InProgress:      <displayText>" (padded) comes from the first in-progress state.
+    final fileStateMatch = RegExp(
+      r'^(Initialize|InProgress):\s+(.+)',
+      caseSensitive: false,
+    ).firstMatch(line.trim());
+    if (fileStateMatch != null) {
+      final isInit = fileStateMatch.group(1)!.toLowerCase() == 'initialize';
+      return ProcessEvent(
+        type: isInit ? ProcessEventType.fileInit : ProcessEventType.fileActive,
+        fileName: fileStateMatch.group(2)?.trim(),
+      );
+    }
+
+    // Interval progress report from IntervalProgressReporter:
+    // "Downloaded X [, Failed Y] of Total Z (P%)"
+    final intervalMatch = RegExp(
+      r'Downloaded \d+(?:, Failed \d+)? of Total \d+ \(([0-9.]+)%\)',
+      caseSensitive: false,
+    ).firstMatch(line);
+    if (intervalMatch != null) {
+      final pct = double.tryParse(intervalMatch.group(1) ?? '') ?? 0.0;
+      return ProcessEvent(
+        type: ProcessEventType.intervalProgress,
+        progress: pct / 100.0,
+      );
+    }
+
+    // Standalone Succeeded/Failed/Skipping lines without [n/N] prefix.
+    // "Succeeded:      <displayText>" also comes from DownloadWrapper on success.
     if (RegExp(r'^succeeded:', caseSensitive: false).hasMatch(line.trim())) {
-      return ProcessEvent(type: ProcessEventType.trackSuccess, message: line);
+      final m = RegExp(r'^succeeded:\s*(.*)', caseSensitive: false)
+          .firstMatch(line.trim());
+      return ProcessEvent(
+        type: ProcessEventType.trackSuccess,
+        message: line,
+        fileName: m?.group(1)?.trim(),
+      );
     }
     if (RegExp(r'^failed:', caseSensitive: false).hasMatch(line.trim())) {
       return ProcessEvent(type: ProcessEventType.trackFailed, message: line);
     }
     if (RegExp(r'^skipping:', caseSensitive: false).hasMatch(line.trim())) {
       return ProcessEvent(type: ProcessEventType.trackSkipped, message: line);
+    }
+
+    // sldl "not found" messages — count as failures so status is set correctly
+    if (RegExp(r'^not found:', caseSensitive: false).hasMatch(line.trim())) {
+      return ProcessEvent(type: ProcessEventType.trackFailed, message: line);
+    }
+    if (RegExp(r'^no results:', caseSensitive: false).hasMatch(line.trim())) {
+      return ProcessEvent(type: ProcessEventType.trackFailed, message: line);
     }
 
     // Completion summary

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// All configuration options for slsk-batchdl (sldl).
 /// Field names map to CLI argument names.
 class SldlConfig {
@@ -121,6 +123,37 @@ class SldlConfig {
   Map<String, Map<String, String>> profiles;
 
   SldlConfig({this.profiles = const {}});
+
+  /// Returns a config pre-populated with sldl's documented defaults,
+  /// plus a platform-appropriate download directory.
+  factory SldlConfig.withDefaults() {
+    String home;
+    String sep;
+    if (Platform.isWindows) {
+      home = Platform.environment['USERPROFILE'] ??
+          Platform.environment['HOMEPATH'] ??
+          'C:\\Users\\User';
+      sep = '\\';
+    } else {
+      home = Platform.environment['HOME'] ?? '/home/user';
+      sep = '/';
+    }
+
+    return SldlConfig()
+      // General
+      ..path = '$home${sep}Music${sep}sldl'
+      ..concurrentDownloads = 2
+      // Connection
+      ..listenPort = 49998
+      ..connectTimeout = 20000
+      // Search
+      ..searchTimeout = 6000
+      ..maxStaleTime = 30000
+      ..searchesPerTime = 34
+      ..searchesRenewTime = 220
+      ..failsToDownrank = 1
+      ..failsToIgnore = 2;
+  }
 
   SldlConfig copy() {
     return SldlConfig(profiles: Map.from(profiles.map((k, v) => MapEntry(k, Map.from(v)))))

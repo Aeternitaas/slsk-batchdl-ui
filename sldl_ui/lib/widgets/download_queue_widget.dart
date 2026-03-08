@@ -83,6 +83,23 @@ class _DownloadItemCard extends StatefulWidget {
 
 class _DownloadItemCardState extends State<_DownloadItemCard> {
   bool _showLog = false;
+  final _logScrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _logScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (_logScrollCtrl.hasClients) {
+      _logScrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -190,13 +207,33 @@ class _DownloadItemCardState extends State<_DownloadItemCard> {
               ),
             ),
 
-            // Progress bar
-            if (item.status == DownloadStatus.running) ...[
+            // Progress bar — shown for all started items, not just while running
+            if (item.status != DownloadStatus.queued) ...[
               const SizedBox(height: 6),
               LinearProgressIndicator(
-                value: item.progress > 0 ? item.progress : null,
+                value: switch (item.status) {
+                  DownloadStatus.running =>
+                    item.progress > 0 ? item.progress : null,
+                  DownloadStatus.succeeded => 1.0,
+                  _ => item.progress > 0 ? item.progress : 0.0,
+                },
                 borderRadius: BorderRadius.circular(2),
+                color: switch (item.status) {
+                  DownloadStatus.succeeded => Colors.green[600],
+                  DownloadStatus.failed => theme.colorScheme.error,
+                  DownloadStatus.cancelled =>
+                    theme.colorScheme.onSurfaceVariant,
+                  _ => null,
+                },
               ),
+              // Per-file rows — only while actively downloading
+              if (item.status == DownloadStatus.running &&
+                  item.recentFiles.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                ...item.recentFiles.reversed.take(5).map(
+                      (f) => _buildFileRow(context, theme, f),
+                    ),
+              ],
             ],
 
             // Log toggle
@@ -230,26 +267,116 @@ class _DownloadItemCardState extends State<_DownloadItemCard> {
               if (_showLog)
                 Container(
                   margin: const EdgeInsets.only(top: 4, left: 24),
-                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   constraints: const BoxConstraints(maxHeight: 160),
-                  child: SingleChildScrollView(
-                    reverse: true,
-                    child: SelectableText(
-                      item.logLines.join('\n'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: SingleChildScrollView(
+                          controller: _logScrollCtrl,
+                          reverse: true,
+                          child: SelectableText(
+                            item.logLines.join('\n'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: IconButton(
+                          icon: const Icon(Icons.keyboard_double_arrow_down, size: 16),
+                          tooltip: 'Scroll to bottom',
+                          onPressed: _scrollToBottom,
+                          style: IconButton.styleFrom(
+                            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                            padding: const EdgeInsets.all(4),
+                            minimumSize: const Size(24, 24),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFileRow(BuildContext context, ThemeData theme, TrackFile file) {
+    final isActive = file.status == TrackFileStatus.initializing ||
+        file.status == TrackFileStatus.downloading;
+    final isFailed = file.status == TrackFileStatus.failed;
+
+    Widget icon;
+    if (isActive) {
+      icon = SizedBox(
+        width: 12,
+        height: 12,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.5,
+          color: theme.colorScheme.primary,
+        ),
+      );
+    } else if (file.status == TrackFileStatus.succeeded) {
+      icon = Icon(Icons.check, size: 12, color: Colors.green[600]);
+    } else {
+      icon = Icon(Icons.close, size: 12, color: theme.colorScheme.error);
+    }
+
+    // Indeterminate while active, full when done, hidden on failure.
+    final double? barValue = file.status == TrackFileStatus.succeeded ? 1.0 : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(width: 14, child: Center(child: icon)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  file.name,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: isFailed
+                        ? theme.colorScheme.error
+                        : isActive
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (!isFailed) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: 20),
+              child: LinearProgressIndicator(
+                value: barValue,
+                minHeight: 2,
+                borderRadius: BorderRadius.circular(1),
+                color: file.status == TrackFileStatus.succeeded
+                    ? Colors.green[600]
+                    : null,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

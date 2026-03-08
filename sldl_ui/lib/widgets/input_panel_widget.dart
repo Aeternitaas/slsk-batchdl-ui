@@ -20,8 +20,6 @@ class _InputPanelWidgetState extends State<InputPanelWidget> {
   bool _albumMode = false;
   bool _aggregateMode = false;
   bool _interactiveMode = false;
-  bool _showAdvanced = false;
-
   // Extra per-job options
   final _maxTracksCtrl = TextEditingController();
   final _offsetCtrl = TextEditingController();
@@ -172,64 +170,45 @@ class _InputPanelWidgetState extends State<InputPanelWidget> {
               onChanged: (v) => setState(() => _interactiveMode = v),
             ),
 
-            // Advanced toggle
-            TextButton.icon(
-              icon: Icon(
-                _showAdvanced ? Icons.expand_less : Icons.tune,
-                size: 16,
+            // Per-job options inline
+            Tooltip(
+              message: 'Stop after downloading this many tracks from the playlist or list.',
+              child: SizedBox(
+                width: 108,
+                child: TextField(
+                  controller: _maxTracksCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Max Tracks',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType: TextInputType.number,
+                ),
               ),
-              label: Text(_showAdvanced ? 'Less options' : 'Options',
-                  style: const TextStyle(fontSize: 12)),
-              onPressed: () =>
-                  setState(() => _showAdvanced = !_showAdvanced),
+            ),
+            Tooltip(
+              message: 'Skip the first N tracks/albums in the playlist or list before downloading.',
+              child: SizedBox(
+                width: 120,
+                child: TextField(
+                  controller: _offsetCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Playlist Offset',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
             ),
           ],
         ),
-
-        // Advanced / per-job options
-        if (_showAdvanced) ...[
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: theme.colorScheme.outlineVariant),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      controller: _maxTracksCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Max tracks (-n)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      controller: _offsetCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Offset (-o)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
 
       ],
     );

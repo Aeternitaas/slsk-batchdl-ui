@@ -31,7 +31,9 @@ class ConfigService {
     final file = File(configPath);
 
     if (!await file.exists()) {
-      return SldlConfig();
+      final defaults = SldlConfig.withDefaults();
+      await _ensureDownloadDir(defaults.path);
+      return defaults;
     }
 
     final lines = await file.readAsLines();
@@ -43,13 +45,21 @@ class ConfigService {
     return loadConfig(configPath);
   }
 
+  Future<void> _ensureDownloadDir(String? path) async {
+    if (path == null || path.isEmpty) return;
+    try {
+      await Directory(path).create(recursive: true);
+    } catch (_) {}
+  }
+
   /// Save the config to the default path (or the provided [path]).
   Future<void> saveConfig(SldlConfig config, [String? path]) async {
     final configPath = path ?? await getDefaultConfigPath();
     final file = File(configPath);
 
-    // Ensure the directory exists
+    // Ensure the config directory and download directory exist
     await file.parent.create(recursive: true);
+    await _ensureDownloadDir(config.path);
 
     // Read existing lines to preserve comments and profile sections
     List<String> existingLines = [];

@@ -375,10 +375,19 @@ class _SldlPathPageState extends State<_SldlPathPage> {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
-        Text(
-          'Download sldl from: https://github.com/fiso64/slsk-batchdl/releases',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
+        InkWell(
+          onTap: () async {
+            final uri = Uri.parse(
+                'https://github.com/fiso64/slsk-batchdl/releases');
+            if (await canLaunchUrl(uri)) launchUrl(uri);
+          },
+          child: Text(
+            'Download sldl from GitHub Releases →',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+              decorationColor: Theme.of(context).colorScheme.primary,
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -471,6 +480,7 @@ class _SoulseekLoginPage extends StatelessWidget {
         ),
         TextField(
           controller: usernameCtrl,
+          enableInteractiveSelection: true,
           decoration: const InputDecoration(
             labelText: 'Soulseek Username',
             prefixIcon: Icon(Icons.person_outline),
@@ -481,6 +491,7 @@ class _SoulseekLoginPage extends StatelessWidget {
         TextField(
           controller: passwordCtrl,
           obscureText: obscurePassword,
+          enableInteractiveSelection: true,
           decoration: InputDecoration(
             labelText: 'Soulseek Password',
             prefixIcon: const Icon(Icons.lock_outline),
@@ -559,18 +570,22 @@ class _SpotifySetupPage extends StatelessWidget {
               ),
               const _InstructionStep(
                 num: '4',
-                text: 'Click "Save". Then open your new app and click "Settings".',
+                text: 'In "Which API/SDKs are you planning to use?", select "Web API".',
               ),
               const _InstructionStep(
                 num: '5',
-                text: 'Copy the "Client ID" and reveal & copy the "Client Secret".',
+                text: 'Click "Save". Then open your new app and click "Settings".',
               ),
               const _InstructionStep(
                 num: '6',
+                text: 'Copy the "Client ID" and reveal & copy the "Client Secret".',
+              ),
+              const _InstructionStep(
+                num: '7',
                 text: 'Paste them below. On first use, sldl will open a browser to authorize. '
                     'Copy the resulting token and refresh token back into Settings.',
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 7),
               InkWell(
                 onTap: () async {
                   final uri = Uri.parse(
